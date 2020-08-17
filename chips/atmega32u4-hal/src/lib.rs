@@ -14,6 +14,8 @@ pub mod adc;
 pub mod port;
 pub mod pwm;
 pub mod wdt;
+#[cfg(feature = "usb")]
+pub mod usb;
 
 pub mod prelude {
     pub use avr_hal_generic::prelude::*;
