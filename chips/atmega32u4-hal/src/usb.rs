@@ -1,16 +1,20 @@
+use crate::avr_hal::avr_device::interrupt::Mutex;
+
 pub struct UsbBus {
-    peripheral: crate::atmega32u4::USB_DEVICE,
+    peripheral: Mutex<crate::atmega32u4::USB_DEVICE>,
 }
-unsafe impl Sync for UsbBus {}
 
 impl UsbBus {
     pub fn new(peripheral: crate::atmega32u4::USB_DEVICE) -> Self {
-        Self { peripheral }
+        Self {
+            peripheral: Mutex::new(peripheral),
+        }
     }
 
-    pub fn release(self) -> crate::atmega32u4::USB_DEVICE {
-        self.peripheral
-    }
+    // Needs bare-metal = 1.0
+    // pub fn release(self) -> crate::atmega32u4::USB_DEVICE {
+    //     self.peripheral.into
+    // }
 }
 use usb_device::{
     bus::PollResult,
