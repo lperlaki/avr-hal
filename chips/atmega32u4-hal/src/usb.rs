@@ -13,7 +13,7 @@ impl UsbBus {
 
     // Needs bare-metal = 1.0
     // pub fn release(self) -> crate::atmega32u4::USB_DEVICE {
-    //     self.peripheral.into
+    //     self.peripheral.into_inner()
     // }
 }
 use usb_device::{
