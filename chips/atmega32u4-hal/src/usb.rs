@@ -215,7 +215,15 @@ impl usb_device::bus::UsbBus for UsbBus {
         let addr = ep_addr.unwrap_or(1.into());
 
         interrupt::free(|cs| {
-            let ep = self.get_ep(addr)?.select(cs);
+            let ep = ep_addr
+                .map(|a| self.get_ep(a).map(|e| e.select(cs)))
+                .unwrap_or_else(|| {
+                    self.iter_endpoints()
+                        .map(|e| e.select(cs))
+                        .find(|e| !e.is_enabled(cs))
+                        .ok_or(UsbError::EndpointOverflow)
+                })?;
+            let ep = ep.select(cs);
             ep.enable(cs);
             ep.set_direction(cs, ep_dir);
             ep.set_typ(cs, ep_type);
@@ -239,13 +247,16 @@ impl usb_device::bus::UsbBus for UsbBus {
             //  Power-On USB pads regulator
             usb.uhwcon.modify(|_, w| w.uvrege().set_bit());
             //  Configure PLL interface
-            // TODO
+            usb.usbcon.modify(|_, w| w.frzclk().set_bit());
             //  Enable PLL
-            pll.pllcsr.modify(|_, w| w.plle().set_bit());
+            pll.pllcsr.write(|w| w.pindiv().set_bit().plle().set_bit());
             //  Check PLL lock
             while pll.pllcsr.read().plock().bit_is_clear() {}
             //  Enable USB interface
-            usb.usbcon.modify(|_, w| w.usbe().set_bit());
+            usb.usbcon
+                .modify(|_, w| w.otgpade().set_bit().usbe().set_bit());
+            usb.udcon.modify(|_, w| w.detach().clear_bit());
+            usb.udien.modify(|_, w| w.eorste().set_bit());
             // Taken care of by usb-device impl
             //  Configure USB interface (USB speed, Endpoints configuration...)
             //  Wait for USB VBUS information connection
@@ -346,6 +357,48 @@ impl usb_device::bus::UsbBus for UsbBus {
     }
 
     fn poll(&self) -> PollResult {
-        PollResult::None
+        interrupt::free(|cs| {
+            let usb = self.usb.borrow(cs);
+            if usb.udint.read().eorsti().bit_is_set() {
+                usb.udint.write(|w| w.eorsti().clear_bit());
+                return PollResult::Reset;
+            }
+            if usb.udint.read().suspi().bit_is_set() {
+                usb.udint.write(|w| w.suspi().clear_bit());
+                return PollResult::Suspend;
+            }
+
+            if usb.udint.read().wakeupi().bit_is_set() {
+                usb.udint.write(|w| w.wakeupi().clear_bit());
+                return PollResult::Resume;
+            }
+
+            if usb.ueintx.read().rxstpi().bit_is_set() {
+                return PollResult::Data {
+                    ep_out: 0,
+                    ep_in_complete: 0,
+                    ep_setup: usb.ueint.read().bits() as u16,
+                };
+            }
+
+            if usb.ueintx.read().rxouti().bit_is_set() {
+                return PollResult::Data {
+                    ep_out: usb.ueint.read().bits() as u16,
+                    ep_in_complete: 0,
+                    ep_setup: 0,
+                };
+            }
+
+            if usb.ueintx.read().txini().bit_is_set() {
+                usb.ueintx.write(|w| w.txini().clear_bit());
+                return PollResult::Data {
+                    ep_out: 0,
+                    ep_in_complete: usb.ueint.read().bits() as u16,
+                    ep_setup: 0,
+                };
+            }
+
+            PollResult::None
+        })
     }
 }

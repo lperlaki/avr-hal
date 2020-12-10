@@ -6,8 +6,7 @@ edition = "2018"
 
 [features]
 rt = ["avr-device/rt"]
-usb = ["usb-device", "usbd-serial"]
-default = ["usb"]
+usb = ["usb-device", "usbd-serial", "rt"]
 
 [dependencies]
 avr-hal-generic = { path = "../../avr-hal-generic/" }
